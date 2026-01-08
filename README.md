@@ -66,8 +66,8 @@ ls -l /dev/ttyUSB*
 # Activate virtual environment
 source venv/bin/activate
 
-# Run the monitoring script
-python monitor.py
+# Run the comprehensive monitoring script
+python scripts/monitor.py
 ```
 
 ### Expected Output
@@ -107,26 +107,23 @@ DC-DC Temp:      25.1 °C
 
 ```
 growatt-spf-monitor/
-├── README.md                 # This file
-├── requirements.txt          # Python dependencies
-├── monitor.py               # Main monitoring script
+├── README.md                  # This file
+├── requirements.txt           # Python dependencies
 ├── docs/
-│   ├── REGISTER_MAP.md      # Complete Modbus register reference
-│   ├── SETUP_GUIDE.md       # Detailed step-by-step setup
-│   └── TROUBLESHOOTING.md   # Common issues and solutions
-├── examples/
-│   ├── simple_read.py       # Basic register reading example
-│   ├── continuous_monitor.py # Continuous monitoring with logging
-│   └── export_csv.py        # Export data to CSV
+│   ├── REGISTER_MAP.md        # Complete Modbus register reference
+│   ├── SPF_PROTOCOL_OFFICIAL.md # Official SPF protocol V0.11
+│   └── TODO.md                # Future work and testing plan
 └── scripts/
-    └── test_connection.py   # Connection testing utility
+    ├── monitor.py             # Main comprehensive monitoring script ⭐
+    ├── test_connection.py     # Quick connection/health check
+    └── check_firmware.py      # Firmware version checker
 ```
 
 ## Documentation
 
-- **[Setup Guide](docs/SETUP_GUIDE.md)** - Complete installation instructions from scratch
-- **[Register Map](docs/REGISTER_MAP.md)** - Full Modbus register reference
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Register Map](docs/REGISTER_MAP.md)** - Full Modbus register reference with scaling factors
+- **[SPF Protocol](docs/SPF_PROTOCOL_OFFICIAL.md)** - Official Growatt SPF protocol V0.11
+- **[TODO & Testing Plan](docs/TODO.md)** - Future work, RS485 setup, Grott integration, etc.
 
 ## Key Register Mappings
 
@@ -168,7 +165,7 @@ sudo apt-get update
 sudo apt-get install python3-serial
 ```
 
-See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for more details.
+For more troubleshooting tips and future work, see [TODO.md](docs/TODO.md).
 
 ## Protocol Information
 
@@ -240,12 +237,44 @@ MIT License - Feel free to use and modify
 - pymodbus library maintainers
 - DIY solar community
 
+## Available Scripts
+
+### scripts/monitor.py (Main Script)
+Comprehensive monitoring showing all inverter data:
+- PV input (voltage, power, buck currents)
+- Battery status with charge/discharge detection
+- AC input/output monitoring
+- Temperatures and system info
+- Fault/warning detection
+
+**Usage:**
+```bash
+source venv/bin/activate
+python scripts/monitor.py
+```
+
+### scripts/test_connection.py
+Quick health check to verify Modbus communication is working.
+
+**Usage:**
+```bash
+python scripts/test_connection.py
+```
+
+### scripts/check_firmware.py
+Check current firmware version of your inverter.
+
+**Usage:**
+```bash
+python scripts/check_firmware.py
+```
+
 ## Support
 
 For issues and questions:
-- Check [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
-- Review register map for correct scaling
-- Verify hardware connections
+- Review [Register Map](docs/REGISTER_MAP.md) for correct scaling
+- Check [TODO.md](docs/TODO.md) for known issues and future work
+- Verify hardware connections and USB permissions
 
 ## Version History
 
