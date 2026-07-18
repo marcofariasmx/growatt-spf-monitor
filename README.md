@@ -170,6 +170,7 @@ doesn't reboot-loop. Details: [docs/GATEWAY.md](docs/GATEWAY.md).
 ## Documentation
 
 - **[Gateway Architecture](docs/GATEWAY.md)** - Local gateway design, API contract, why it exists
+- **[Battery Charge Tuning](docs/BATTERY_CHARGE_TUNING.md)** - LiFePO4 charge-voltage tuning for longevity, BMS comms modes
 - **[Register Map](docs/REGISTER_MAP.md)** - Full Modbus register reference with scaling factors
 - **[SPF Protocol](docs/SPF_PROTOCOL_OFFICIAL.md)** - Official Growatt SPF protocol V0.11
 - **[Setup Guide](docs/SETUP_GUIDE.md)** - Hardware setup and installation

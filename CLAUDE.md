@@ -124,6 +124,7 @@ See `tools/protocol_capture/README.md` for full documentation.
 ## Documentation
 
 - `docs/GATEWAY.md` - Local gateway architecture, API contract, why it exists
+- `docs/BATTERY_CHARGE_TUNING.md` - LiFePO4 charge-voltage tuning for longevity (the "charge to 80%" analog), BMS comms modes
 - `docs/REGISTER_MAP.md` - Complete Modbus register reference
 - `docs/SPF_PROTOCOL_OFFICIAL.md` - Cloud protocol specification
 - `docs/SETUP_GUIDE.md` - Hardware setup and installation
