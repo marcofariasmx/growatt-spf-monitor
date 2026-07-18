@@ -101,6 +101,8 @@ Copy `.env.example` to `.env` and configure:
 - `GATEWAY_HOST` / `GATEWAY_PORT` - local API bind address (default: 127.0.0.1:8090)
 - `GATEWAY_POLL_INTERVAL` / `GATEWAY_STALE_AFTER` - polling cadence and staleness threshold
 
+`.env` is gitignored and kept outside this repo.
+
 ## Protocol Capture Tool
 
 For reverse engineering the dongle protocol, use the capture tool in `tools/protocol_capture/`:
