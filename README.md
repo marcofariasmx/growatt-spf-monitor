@@ -108,21 +108,62 @@ DC-DC Temp:      25.1 °C
 ```
 growatt-spf-monitor/
 ├── README.md                  # This file
+├── CLAUDE.md                  # Guidance for Claude Code working in this repo
 ├── requirements.txt           # Python dependencies
+├── .env.example                # Config template (Modbus, gateway, cloud, API token)
+├── growatt-gateway.service     # systemd unit: owns the Modbus port
+├── growatt-cloud.service       # systemd unit: relays to server.growatt.com
 ├── docs/
+│   ├── GATEWAY.md             # Local gateway architecture + API contract
 │   ├── REGISTER_MAP.md        # Complete Modbus register reference
 │   ├── SPF_PROTOCOL_OFFICIAL.md # Official SPF protocol V0.11
+│   ├── SETUP_GUIDE.md         # Hardware setup and installation
+│   ├── TROUBLESHOOTING.md     # Common issues and solutions
 │   └── TODO.md                # Future work and testing plan
-└── scripts/
-    ├── monitor.py             # Main comprehensive monitoring script ⭐
-    ├── test_connection.py     # Quick connection/health check
-    └── check_firmware.py      # Firmware version checker
+├── scripts/
+│   ├── growatt_gateway.py     # Owns Modbus, exposes /latest + /health ⭐
+│   ├── growatt_common.py      # Shared Modbus reading + .env loading
+│   ├── growatt_cloud.py       # Relays gateway readings to Growatt cloud ⭐
+│   ├── growatt_api.py         # Legacy server.growatt.com panel scraper
+│   ├── monitor.py             # Standalone monitoring script (needs gateway stopped)
+│   ├── test_connection.py     # Quick connection/health check
+│   └── check_firmware.py      # Firmware version checker
+├── tools/
+│   ├── probe_modbus.py        # One-off raw register read for diagnostics
+│   └── protocol_capture/      # Dongle protocol reverse-engineering toolkit
+└── test_data/
+    └── inverter_snapshot.json # Static fallback snapshot (gateway uses this if the inverter is unreachable)
+```
+
+## Cloud Upload & Local Gateway
+
+Beyond local monitoring, this repo also runs a **Growatt cloud relay**: it
+emulates a ShineWiFi-F dongle so a Growatt SPF inverter without one shows up
+live in the ShinePhone app / server.growatt.com dashboard.
+
+Because the Modbus port only tolerates one exclusive owner,
+`growatt_gateway.py` is the single process that talks to the inverter; it
+polls on an interval and exposes the latest reading over a local-only HTTP
+API (`GET /latest`, `GET /health`, default `127.0.0.1:8090`).
+`growatt_cloud.py` (and any future local consumer -- a dashboard, a logger,
+Home Assistant) reads from that API instead of opening the serial port
+itself. Full rationale and the API response shape: **[docs/GATEWAY.md](docs/GATEWAY.md)**.
+
+```bash
+# Deploy both as systemd services (gateway first)
+sudo cp growatt-gateway.service growatt-cloud.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now growatt-gateway
+sudo systemctl enable --now growatt-cloud
 ```
 
 ## Documentation
 
+- **[Gateway Architecture](docs/GATEWAY.md)** - Local gateway design, API contract, why it exists
 - **[Register Map](docs/REGISTER_MAP.md)** - Full Modbus register reference with scaling factors
 - **[SPF Protocol](docs/SPF_PROTOCOL_OFFICIAL.md)** - Official Growatt SPF protocol V0.11
+- **[Setup Guide](docs/SETUP_GUIDE.md)** - Hardware setup and installation
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[TODO & Testing Plan](docs/TODO.md)** - Future work, RS485 setup, Grott integration, etc.
 
 ## Key Register Mappings
@@ -219,6 +260,20 @@ while True:
     time.sleep(60)  # Read every minute
 ```
 
+## Running Tests
+
+The test suite mocks the Modbus client and the gateway's in-memory cache,
+so it runs without any real inverter or hardware attached:
+
+```bash
+python -m venv venv && source venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+See `CHANGELOG.md` for release history and `VERSION` for the current
+version.
+
 ## Contributing
 
 Contributions welcome! Please:
@@ -239,7 +294,27 @@ MIT License - Feel free to use and modify
 
 ## Available Scripts
 
-### scripts/monitor.py (Main Script)
+### scripts/growatt_gateway.py (Cloud relay - required)
+Owns the Modbus connection, polls the inverter, and serves the latest
+reading over a local HTTP API. See [docs/GATEWAY.md](docs/GATEWAY.md).
+
+**Usage:**
+```bash
+source venv/bin/activate
+python scripts/growatt_gateway.py
+```
+
+### scripts/growatt_cloud.py (Cloud relay)
+Fetches readings from the gateway and uploads them to server.growatt.com,
+emulating a ShineWiFi-F dongle. Requires `growatt_gateway.py` to be running.
+
+**Usage:**
+```bash
+source venv/bin/activate
+python scripts/growatt_cloud.py
+```
+
+### scripts/monitor.py (Standalone Script)
 Comprehensive monitoring showing all inverter data:
 - PV input (voltage, power, buck currents)
 - Battery status with charge/discharge detection
@@ -247,9 +322,13 @@ Comprehensive monitoring showing all inverter data:
 - Temperatures and system info
 - Fault/warning detection
 
+Opens the Modbus port directly, so stop `growatt-gateway.service` first if
+it's running (only one process can hold the port at a time).
+
 **Usage:**
 ```bash
 source venv/bin/activate
+sudo systemctl stop growatt-gateway  # if running as a service
 python scripts/monitor.py
 ```
 
@@ -278,6 +357,12 @@ For issues and questions:
 
 ## Version History
 
+See `CHANGELOG.md` for full details.
+
+- **v1.1.0** (2026-07-18)
+  - Local gateway (`growatt_gateway.py`) as the single owner of the Modbus port
+  - `growatt_cloud.py` refactored into a gateway client; skips uploads for fabricated/stale readings
+  - Test suite (`pytest`), `CHANGELOG.md`, `VERSION`
 - **v1.0.0** (2026-01-07)
   - Initial release
   - Complete register mapping

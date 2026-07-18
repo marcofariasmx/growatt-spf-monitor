@@ -1,0 +1,23 @@
+[Unit]
+Description=Growatt Local Gateway (Modbus owner + local HTTP API)
+Documentation=https://github.com/marcofariasmx/growatt-spf-monitor
+After=network.target
+
+[Service]
+Type=simple
+User=mafx
+Group=mafx
+WorkingDirectory=/home/mafx/growatt-spf-monitor
+ExecStart=/home/mafx/growatt-spf-monitor/venv/bin/python /home/mafx/growatt-spf-monitor/scripts/growatt_gateway.py
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+
+# Give time for the USB-serial adapter to enumerate after boot
+ExecStartPre=/bin/sleep 10
+
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

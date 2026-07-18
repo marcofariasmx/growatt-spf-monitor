@@ -1,0 +1,25 @@
+[Unit]
+Description=Growatt Cloud Upload Service
+Documentation=https://github.com/marcofariasmx/growatt-spf-monitor
+After=network-online.target growatt-gateway.service
+Wants=network-online.target growatt-gateway.service
+
+[Service]
+Type=simple
+User=mafx
+Group=mafx
+WorkingDirectory=/home/mafx/growatt-spf-monitor
+ExecStart=/home/mafx/growatt-spf-monitor/venv/bin/python /home/mafx/growatt-spf-monitor/scripts/growatt_cloud.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Give the gateway a moment to publish its first reading
+ExecStartPre=/bin/sleep 10
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

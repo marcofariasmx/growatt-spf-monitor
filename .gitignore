@@ -47,3 +47,14 @@ data/
 # Configuration (if contains sensitive info)
 config.local.py
 secrets.py
+.env
+
+# Real inverter/datalogger snapshots contain your device's actual serial
+# numbers -- those are enough to impersonate your datalogger to Growatt's
+# cloud, so they never get committed. Generate your own locally with
+# scripts/save_test_data.py; only the redacted *.example.json ship in git.
+test_data/*.json
+!test_data/*.example.json
+
+# Raw protocol captures may contain the same real serials
+*.pcap
