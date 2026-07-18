@@ -31,8 +31,8 @@ pip install -r requirements-dev.txt
 pytest
 
 # Systemd service management
-sudo systemctl start growatt-gateway.service growatt-cloud.service
-sudo journalctl -u growatt-gateway.service -u growatt-cloud.service -f
+sudo systemctl start growatt-gateway.service growatt-cloud.service growatt-watchdog.service
+sudo journalctl -u growatt-gateway.service -u growatt-cloud.service -u growatt-watchdog.service -f
 ```
 
 ## Architecture
@@ -56,7 +56,8 @@ HTTP. Full rationale and API contract: `docs/GATEWAY.md`.
 
 ### Core Components
 
-- **scripts/growatt_gateway.py** - Owns the Modbus connection, polls the inverter, exposes `/latest` + `/health`
+- **scripts/growatt_gateway.py** - Owns the Modbus connection, polls the inverter, exposes `/latest` + `/health`, self-heals with a soft reconnect after sustained read failures
+- **scripts/growatt_watchdog.py** - Reboots the host if the gateway stays unhealthy longer than a soft reconnect can fix (mirrors `huawei-monitor/watchdog.py`)
 - **scripts/growatt_common.py** - Shared Modbus reading + `.env` loading + test-data fallback, used by the gateway and diagnostic tools
 - **scripts/growatt_cloud.py** - Fetches readings from the gateway, encrypts payloads, uploads to cloud
 - **scripts/monitor.py** - Standalone Modbus reading without cloud upload (needs the gateway stopped first)

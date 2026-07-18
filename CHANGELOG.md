@@ -4,6 +4,32 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-07-18
+
+### Added
+- `InverterReader.all_reads_failed`: tracks whether *every* register read
+  in a `read_all()` cycle failed, distinguishing a total communication
+  breakdown from a normal reading that's legitimately full of zeros.
+- `growatt_gateway.py` soft self-healing: after
+  `GATEWAY_RECONNECT_AFTER_FAILURES` (default 3) consecutive total-failure
+  cycles, the gateway closes and reopens the Modbus connection itself.
+  The poll loop also retries establishing the initial connection
+  (`_try_late_connect`) if the adapter wasn't present at startup, so a
+  replug or boot-time race resolves without a service restart.
+- `scripts/growatt_watchdog.py` + `growatt-watchdog.service`: polls the
+  gateway's `/health` and reboots the host after sustained unhealthiness
+  a soft reconnect couldn't fix, with a cooldown to avoid reboot loops.
+  Mirrors the existing `huawei-monitor/watchdog.py` pattern on
+  rancho-main-pi. This is what actually recovers a wedged USB-to-RS485
+  adapter (`urb stopped: -32`) -- confirmed during the 2026-07-17
+  incident that only a full reboot cleared it, not a pyserial-level
+  reconnect.
+- `.env.example`: `GATEWAY_RECONNECT_AFTER_FAILURES`,
+  `GATEWAY_WATCHDOG_INTERVAL`, `GATEWAY_WATCHDOG_FAILURE_LIMIT`,
+  `GATEWAY_WATCHDOG_UNHEALTHY_AGE`, `GATEWAY_WATCHDOG_COOLDOWN`.
+- Tests for all of the above (`all_reads_failed`, `_try_late_connect`,
+  the watchdog's `is_healthy`/cooldown logic).
+
 ## [1.1.0] - 2026-07-18
 
 ### Added

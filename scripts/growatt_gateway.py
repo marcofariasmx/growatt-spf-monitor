@@ -20,6 +20,14 @@ If the inverter can't be reached at all (no port, hardware fault), the
 gateway falls back to test_data/inverter_snapshot.json so downstream
 tooling still has something to develop against -- but every response
 says so via "source": "test_data", rather than pretending to be live.
+
+Self-healing: a total read failure (every register in one read_all()
+cycle failing, not just a couple) triggers a soft reconnect after
+GATEWAY_RECONNECT_AFTER_FAILURES consecutive cycles, and the poll loop
+also keeps trying to establish the initial connection if the adapter
+wasn't present at startup. This recovers from most transient faults on
+its own; growatt_watchdog.py handles the harder case (a wedged USB
+endpoint that only a reboot clears -- see docs/GATEWAY.md).
 """
 
 import os
@@ -42,6 +50,7 @@ GATEWAY_HOST = ENV.get('GATEWAY_HOST', '127.0.0.1')
 GATEWAY_PORT = int(ENV.get('GATEWAY_PORT', '8090'))
 POLL_INTERVAL = float(ENV.get('GATEWAY_POLL_INTERVAL', '15'))
 STALE_AFTER = float(ENV.get('GATEWAY_STALE_AFTER', '90'))
+RECONNECT_AFTER_FAILURES = int(ENV.get('GATEWAY_RECONNECT_AFTER_FAILURES', '3'))
 
 
 class GatewayState:
@@ -81,19 +90,56 @@ _inverter = None
 _test_data = None
 _stop_event = threading.Event()
 _poll_thread = None
+_consecutive_total_failures = 0
+
+
+def _try_late_connect():
+    """If the adapter wasn't present (or connect() failed) at startup,
+    keep checking for it -- lets the gateway self-heal from a replug or a
+    transient boot-time race without needing a service restart."""
+    global _inverter
+    if _inverter is not None or not os.path.exists(MODBUS_PORT):
+        return
+    candidate = InverterReader(MODBUS_PORT, MODBUS_BAUDRATE, MODBUS_DEVICE_ID)
+    if candidate.connect():
+        print(f"[{datetime.now()}] Gateway: inverter became available, connected")
+        _inverter = candidate
 
 
 def _poll_loop():
+    global _consecutive_total_failures
+
     while not _stop_event.is_set():
         raw = None
         source = None
 
+        _try_late_connect()
+
         if _inverter is not None:
             try:
-                raw = _inverter.read_all()
-                source = 'modbus'
+                candidate = _inverter.read_all()
+                if _inverter.all_reads_failed:
+                    _consecutive_total_failures += 1
+                    print(f"[{datetime.now()}] Gateway: every register read failed this "
+                          f"cycle ({_consecutive_total_failures} consecutive) -- "
+                          f"treating as no reading, not as a live zero")
+                else:
+                    _consecutive_total_failures = 0
+                    raw = candidate
+                    source = 'modbus'
             except Exception as e:
+                _consecutive_total_failures += 1
                 print(f"[{datetime.now()}] Gateway poll error: {e}")
+
+            if _consecutive_total_failures >= RECONNECT_AFTER_FAILURES:
+                print(f"[{datetime.now()}] Gateway: {_consecutive_total_failures} consecutive "
+                      f"failed cycles, attempting a soft reconnect")
+                _inverter.disconnect()
+                if _inverter.connect():
+                    print(f"[{datetime.now()}] Gateway: reconnected successfully")
+                else:
+                    print(f"[{datetime.now()}] Gateway: reconnect attempt failed, will keep retrying")
+                _consecutive_total_failures = 0
 
         if raw is None and _test_data is not None:
             raw = _test_data

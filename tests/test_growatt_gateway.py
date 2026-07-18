@@ -88,6 +88,66 @@ def test_health_endpoint_reports_no_inverter_by_default(monkeypatch):
     assert health['has_reading'] is False
 
 
+class _FakeConnectableReader:
+    """Stands in for InverterReader in _try_late_connect() tests, without
+    touching a real serial port."""
+
+    def __init__(self, port, baudrate, device_id, succeeds=True):
+        self.succeeds = succeeds
+        self.connected = False
+
+    def connect(self):
+        self.connected = self.succeeds
+        return self.succeeds
+
+
+def test_try_late_connect_does_nothing_if_already_connected(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(gw, '_inverter', sentinel)
+    monkeypatch.setattr(gw, 'InverterReader',
+                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not construct")))
+
+    gw._try_late_connect()
+
+    assert gw._inverter is sentinel
+
+
+def test_try_late_connect_does_nothing_if_port_missing(monkeypatch):
+    monkeypatch.setattr(gw, '_inverter', None)
+    monkeypatch.setattr(gw.os.path, 'exists', lambda path: False)
+
+    gw._try_late_connect()
+
+    assert gw._inverter is None
+
+
+def test_try_late_connect_connects_when_port_appears(monkeypatch):
+    monkeypatch.setattr(gw, '_inverter', None)
+    monkeypatch.setattr(gw.os.path, 'exists', lambda path: True)
+    monkeypatch.setattr(
+        gw, 'InverterReader',
+        lambda port, baud, dev_id: _FakeConnectableReader(port, baud, dev_id, succeeds=True)
+    )
+
+    gw._try_late_connect()
+
+    assert gw._inverter is not None
+    assert gw._inverter.connected is True
+
+
+def test_try_late_connect_leaves_inverter_none_on_failed_connect(monkeypatch):
+    monkeypatch.setattr(gw, '_inverter', None)
+    monkeypatch.setattr(gw.os.path, 'exists', lambda path: True)
+    monkeypatch.setattr(
+        gw, 'InverterReader',
+        lambda port, baud, dev_id: _FakeConnectableReader(port, baud, dev_id, succeeds=False)
+    )
+
+    gw._try_late_connect()
+
+    assert gw._inverter is None
+
+
 def test_health_endpoint_reports_reading_age(monkeypatch):
     fresh_state = gw.GatewayState()
     fresh_state.update(_SAMPLE_RAW, source='modbus')

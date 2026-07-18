@@ -133,3 +133,36 @@ def test_read_all_returns_every_key_scale_reading_needs():
 
     # Must not raise -- scale_reading() requires exactly these keys
     scale_reading(data)
+
+
+def test_all_reads_failed_is_false_when_everything_succeeds():
+    reader = _reader_with_fake_client(default=_FakeRegistersResult([0, 0]))
+    reader.read_all()
+    assert reader.all_reads_failed is False
+
+
+def test_all_reads_failed_is_true_when_every_register_errors():
+    """This is the exact scenario from the 2026-07-17 incident: the
+    adapter accepts a connection but every subsequent register read
+    fails. The gateway needs to be able to tell this apart from a
+    legitimate reading full of real zeros."""
+    reader = _reader_with_fake_client(default=_FakeErrorResult())
+    reader.read_all()
+    assert reader.all_reads_failed is True
+
+
+def test_all_reads_failed_is_false_with_a_partial_failure():
+    responses = {0: _FakeErrorResult()}
+    reader = _reader_with_fake_client(responses, default=_FakeRegistersResult([0, 0]))
+    reader.read_all()
+    assert reader.all_reads_failed is False
+
+
+def test_read_all_resets_counters_between_calls():
+    reader = _reader_with_fake_client(default=_FakeErrorResult())
+    reader.read_all()
+    assert reader.all_reads_failed is True
+
+    reader.client = _FakeModbusClient(default=_FakeRegistersResult([0, 0]))
+    reader.read_all()
+    assert reader.all_reads_failed is False

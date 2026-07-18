@@ -113,6 +113,7 @@ growatt-spf-monitor/
 ├── .env.example                # Config template (Modbus, gateway, cloud, API token)
 ├── growatt-gateway.service     # systemd unit: owns the Modbus port
 ├── growatt-cloud.service       # systemd unit: relays to server.growatt.com
+├── growatt-watchdog.service    # systemd unit: reboots the host if the gateway stays unhealthy
 ├── docs/
 │   ├── GATEWAY.md             # Local gateway architecture + API contract
 │   ├── REGISTER_MAP.md        # Complete Modbus register reference
@@ -121,7 +122,8 @@ growatt-spf-monitor/
 │   ├── TROUBLESHOOTING.md     # Common issues and solutions
 │   └── TODO.md                # Future work and testing plan
 ├── scripts/
-│   ├── growatt_gateway.py     # Owns Modbus, exposes /latest + /health ⭐
+│   ├── growatt_gateway.py     # Owns Modbus, exposes /latest + /health, self-heals ⭐
+│   ├── growatt_watchdog.py    # Reboots the host if the gateway stays unhealthy
 │   ├── growatt_common.py      # Shared Modbus reading + .env loading
 │   ├── growatt_cloud.py       # Relays gateway readings to Growatt cloud ⭐
 │   ├── growatt_api.py         # Legacy server.growatt.com panel scraper
@@ -150,12 +152,20 @@ Home Assistant) reads from that API instead of opening the serial port
 itself. Full rationale and the API response shape: **[docs/GATEWAY.md](docs/GATEWAY.md)**.
 
 ```bash
-# Deploy both as systemd services (gateway first)
-sudo cp growatt-gateway.service growatt-cloud.service /etc/systemd/system/
+# Deploy as systemd services (gateway first)
+sudo cp growatt-gateway.service growatt-cloud.service growatt-watchdog.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now growatt-gateway
 sudo systemctl enable --now growatt-cloud
+sudo systemctl enable --now growatt-watchdog
 ```
+
+The gateway self-heals from most transient faults (a soft reconnect after
+a few consecutive total-read-failure cycles). For the harder case that
+motivated this project -- a wedged USB-to-RS485 adapter that only a
+reboot clears -- `growatt-watchdog.service` reboots the host after
+sustained unhealthiness, with a cooldown so a genuinely dead adapter
+doesn't reboot-loop. Details: [docs/GATEWAY.md](docs/GATEWAY.md).
 
 ## Documentation
 
@@ -359,6 +369,9 @@ For issues and questions:
 
 See `CHANGELOG.md` for full details.
 
+- **v1.2.0** (2026-07-18)
+  - Gateway self-heals with a soft Modbus reconnect after sustained total-read failures
+  - `growatt_watchdog.py` reboots the host if that's not enough (mirrors the modem watchdog pattern)
 - **v1.1.0** (2026-07-18)
   - Local gateway (`growatt_gateway.py`) as the single owner of the Modbus port
   - `growatt_cloud.py` refactored into a gateway client; skips uploads for fabricated/stale readings

@@ -119,19 +119,71 @@ New `.env` variables (see `.env.example`):
 
 ## Deployment
 
-Two systemd services now, gateway first:
+Three systemd services now, gateway first:
 
 ```bash
-sudo cp growatt-gateway.service growatt-cloud.service /etc/systemd/system/
+sudo cp growatt-gateway.service growatt-cloud.service growatt-watchdog.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now growatt-gateway
 sudo systemctl enable --now growatt-cloud
+sudo systemctl enable --now growatt-watchdog
 ```
 
 `growatt-cloud.service` has `After=`/`Wants=growatt-gateway.service` (a soft
 dependency, not `Requires=`/`BindsTo=`) -- if the gateway is momentarily
 down, the relay keeps running and simply skips upload cycles until it's
-back, rather than being taken down with it.
+back, rather than being taken down with it. `growatt-watchdog.service` is
+independent of both and can reboot the host even if `growatt-cloud` is
+down for unrelated reasons -- see "Self-healing and the watchdog" below.
+
+## Self-healing and the watchdog
+
+The 2026-07-17 incident's root fix on rancho-inverter-pi required a full
+Pi reboot: the USB-to-RS485 adapter had wedged at the kernel/USB level
+(`urb stopped: -32`, then `[Errno 5] Input/Output error`), and neither a
+pyserial-level reconnect nor a driver unbind/rebind cleared it. Two
+complementary layers of recovery now exist, matched to what each is
+actually capable of fixing:
+
+1. **Soft reconnect (in-process, `growatt_gateway.py`).** Every
+   `read_all()` cycle tracks how many of its register reads succeeded vs.
+   failed (`InverterReader.all_reads_failed`). A *total* failure --
+   every single register in the cycle, not just one -- counts against
+   `GATEWAY_RECONNECT_AFTER_FAILURES` (default 3) consecutive cycles;
+   past that, the gateway closes and reopens the serial connection
+   itself. The poll loop also keeps checking for the adapter if it wasn't
+   present at startup (`_try_late_connect`), so a replug or a boot-time
+   race resolves on its own without a service restart. This recovers
+   transient faults: a brief RS485 glitch, the inverter power-cycling,
+   the port not being ready yet when the service started.
+
+2. **Reboot watchdog (`growatt_watchdog.py`, separate process).** Polls
+   the gateway's `/health` every `GATEWAY_WATCHDOG_INTERVAL` (default
+   60s). After `GATEWAY_WATCHDOG_FAILURE_LIMIT` (default 10) consecutive
+   unhealthy checks -- meaning the soft reconnect above has clearly not
+   fixed things -- it reboots the Pi (`sudo reboot`; `mafx` has
+   passwordless sudo on this host). A cooldown
+   (`GATEWAY_WATCHDOG_COOLDOWN`, default 3600s) blocks a second reboot
+   within an hour of the last one, so a genuinely dead adapter surfaces
+   as "still unhealthy after a reboot" instead of a reboot loop. This
+   mirrors the existing `huawei-monitor/watchdog.py` pattern on
+   rancho-main-pi (ping failures -> modem reboot) -- same shape of
+   problem, same shape of fix.
+
+"Healthy" is intentionally strict and matches `should_upload()`'s
+definition in `growatt_cloud.py`: `modbus_connected` true, `source ==
+"modbus"`, and `age_seconds` under `GATEWAY_WATCHDOG_UNHEALTHY_AGE`
+(default 300s). A gateway quietly serving `test_data` counts as
+unhealthy here on purpose -- that silent substitution is exactly what
+caused the original incident.
+
+Deploy the watchdog as a third systemd service, after the gateway:
+
+```bash
+sudo cp growatt-watchdog.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now growatt-watchdog
+```
 
 ## Diagnostics
 

@@ -45,6 +45,11 @@ class InverterReader:
         self.baudrate = baudrate
         self.device_id = device_id
         self.client = None
+        # Per-read_all() cycle counters -- lets a caller tell "every single
+        # register failed" (a real communication breakdown) apart from a
+        # normal reading full of legitimate zeros.
+        self.reads_ok = 0
+        self.reads_failed = 0
 
     def connect(self):
         from pymodbus.client import ModbusSerialClient
@@ -76,10 +81,12 @@ class InverterReader:
                 address=address, count=1, device_id=self.device_id
             )
             if hasattr(result, 'registers'):
+                self.reads_ok += 1
                 return result.registers[0]
             print(f"[{datetime.now()}] Modbus read error at reg {address}: {result}")
         except Exception as e:
             print(f"[{datetime.now()}] Modbus exception at reg {address}: {e}")
+        self.reads_failed += 1
         return 0
 
     def _read_u32(self, address):
@@ -88,10 +95,12 @@ class InverterReader:
                 address=address, count=2, device_id=self.device_id
             )
             if hasattr(result, 'registers') and len(result.registers) == 2:
+                self.reads_ok += 1
                 return (result.registers[0] << 16) | result.registers[1]
             print(f"[{datetime.now()}] Modbus read error at reg {address}: {result}")
         except Exception as e:
             print(f"[{datetime.now()}] Modbus exception at reg {address}: {e}")
+        self.reads_failed += 1
         return 0
 
     def _read_s32(self, address):
@@ -100,8 +109,18 @@ class InverterReader:
             val -= 0x100000000
         return val
 
+    @property
+    def all_reads_failed(self):
+        """True only when the last read_all() call got zero successful
+        register reads -- a total communication breakdown (dead adapter,
+        wrong device_id, bus fault), not just a register or two glitching.
+        """
+        return self.reads_failed > 0 and self.reads_ok == 0
+
     def read_all(self):
         """Read all relevant registers from the inverter (raw, unscaled)."""
+        self.reads_ok = 0
+        self.reads_failed = 0
         return {
             'status': self._read_u16(0),
             'vpv1': self._read_u16(1),

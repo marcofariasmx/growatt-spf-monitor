@@ -1,0 +1,21 @@
+[Unit]
+Description=Growatt Gateway Watchdog (reboots the host if the Modbus adapter stays wedged)
+Documentation=https://github.com/marcofariasmx/growatt-spf-monitor
+After=growatt-gateway.service
+Wants=growatt-gateway.service
+
+[Service]
+Type=simple
+User=mafx
+Group=mafx
+WorkingDirectory=/home/mafx/growatt-spf-monitor
+ExecStart=/home/mafx/growatt-spf-monitor/venv/bin/python /home/mafx/growatt-spf-monitor/scripts/growatt_watchdog.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
