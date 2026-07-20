@@ -88,6 +88,47 @@ Notes for Modbus writes (function 0x06):
 - Read the value back after writing, and confirm on the LCD if you're
   on-site. Some firmware quietly clamps out-of-range values.
 
+## Cell balancing — the real counter-argument to low voltage
+
+LiFePO4 packs use **passive balancing** (the Growatt ARK included, per
+its manual): the BMS bleeds charge off the highest cells through
+resistors once they reach a threshold voltage, letting the lower cells
+catch up. Two facts make this matter for charge-voltage tuning:
+
+- **Balancing only happens near the top.** LiFePO4's voltage curve is so
+  flat in the middle that cell-to-cell SOC differences are only visible
+  as voltage differences above ~3.4V/cell. Below that the BMS literally
+  can't tell which cell is fuller. Typical passive-balance start
+  thresholds sit around 3.40-3.45V/cell.
+- **Passive balancing is slow and needs low current.** It bleeds tens of
+  mA and works best "when there are small charging currents" (i.e. the
+  tail end of an absorption phase). It needs *time* held at high
+  voltage, not just a momentary touch of the peak.
+
+Implication: charging to **3.45V/cell (55.2V)** still reaches the balance
+threshold on most BMSs, so it's the lowest you can go without starving
+balancing. Going lower (54.4V/3.40V and below) risks cells drifting apart
+over time.
+
+The community-standard resolution is to **decouple the two goals**:
+charge to a moderate voltage daily, and do a periodic (every 2-4 weeks)
+full charge held at the top so the BMS gets real balancing time. This is
+better than a permanent high voltage, because a system that cuts charge
+the instant it hits 100% (many SPF inverters in lithium mode do exactly
+this) never gives balancing a sustained high-voltage window anyway --
+you pay the voltage stress without getting the balancing benefit.
+
+## How much capacity do you actually lose?
+
+Very little, which is what makes low-voltage charging attractive.
+Bench testing (Panbo, 12V pack) found capacity is essentially flat until
+absorption drops below ~3.375V/cell; at 3.475V/cell a pack reached 98.4%
+SOC, and the last ~1.6% took over an hour of tail current. Real-world:
+a documented pack charged only to 3.45V/cell logged 2500+ cycles over
+15 years at 103% of rated capacity. So 3.45V/cell (55.2V) costs roughly
+1-2% of daily usable capacity for a meaningful reduction in top-of-charge
+stress.
+
 ## BMS communication (vs. voltage-controlled mode)
 
 The ARK LV series speaks **CAN** using Growatt's own protocol (LCD:
@@ -107,11 +148,17 @@ Two implications:
 
 - In voltage-controlled mode, the tuning above is fully in your hands --
   the inverter will do exactly what registers 35/36 say.
-- With BMS comms active, the BMS's requested CV voltage generally wins;
-  tuning registers 35/36 may have little effect. (The ARK BMS still
-  protects the pack either way -- comms or not -- by disconnecting on
-  cell over/under-voltage; that's a last-resort protection, not a
-  charge-management strategy.)
+- With BMS comms active, **who wins is genuinely ambiguous on SPF
+  inverters** and reportedly firmware-dependent. Multiple forum reports
+  describe the SPF *not* honoring BMS-requested charge limits and
+  charging until the BMS trips its own over-voltage protection; others
+  describe the BMS request taking priority. So on a CAN-comms system,
+  lowering registers 35/36 (or the dashboard's charge-voltage fields)
+  **may or may not take effect** -- the only reliable way to know is to
+  change it and watch whether the pack still reaches the old voltage.
+  (The ARK BMS still protects the pack either way -- comms or not -- by
+  disconnecting on cell over/under-voltage; that's a last-resort
+  protection, not a charge-management strategy.)
 
 Note the charge/discharge current limits stack with parallel modules
 (ARK 2.5L-A1: 25A per module -- 2 modules = 50A, up to 100A at 4+).
@@ -133,3 +180,18 @@ Keep `MaxChargeCurr` at or below the pack's aggregate limit.
   [SPF 3000TL LVM optimal settings](https://diysolarforum.com/threads/growatt-spf-3000tl-lvm-es-with-48v-battery-optimal-settings.64742/)
 - LiFePO4 voltage/SOC chart reference:
   [cleversolarpower.com](https://cleversolarpower.com/lifepo4-voltage-chart/)
+- Low-voltage charging bench test + long-life real-world data:
+  [Panbo: charging LiFePO4, impact of lower voltages](https://panbo.com/charging-lifepo4-whats-the-impact-of-lower-voltages/)
+- ARK passive balancing (manual) + SPF/BMS charge-control-priority
+  reports: [DIY Solar Forum ARK 2.5L thread](https://diysolarforum.com/threads/growatt-ark-2-5l-battery.22956/),
+  [SPF lithium comms threads](https://diysolarforum.com/threads/growatt-spf3000-and-jk-inverter-bms-works.104491/)
+
+## Note on LFP vs. NMC chemistry
+
+LiFePO4 (LFP) and the lithium-ion in phones/EVs (NMC/NCA) are different
+chemistries with different voltage windows. NMC is ~3.7V nominal / 4.2V
+max per cell -- that's where the EV "charge to 80%" advice comes from.
+LFP is 3.2V nominal / **3.65V max** per cell. So an LFP cell at 3.55V is
+near its ceiling (~0.1V from max), not "far from 4.2V" -- the 4.2V figure
+simply doesn't apply to LFP. The longevity principle (don't sit pinned at
+the top) carries over; the numbers don't.
