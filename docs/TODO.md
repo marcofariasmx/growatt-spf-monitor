@@ -4,6 +4,71 @@ This document tracks all pending tasks, testing requirements, and future enhance
 
 ---
 
+## PARKED: Automated battery charge-management for LiFePO4 longevity
+
+**Status:** researched and documented, deliberately NOT started. Deferred
+until someone can be **physically on-site at the ranch** for the first
+write test, in case a charge-parameter change misbehaves. Full background
+and the chemistry/balancing reasoning live in
+[docs/BATTERY_CHARGE_TUNING.md](BATTERY_CHARGE_TUNING.md).
+
+### The idea
+
+Since the monitoring stack is already automated (gateway + Modbus + Pi),
+build a scheduled charge-management routine that protects the battery
+day-to-day and only stresses it when needed for balancing:
+
+- **Normally:** charge to a lower voltage (~55.2V / 3.45V per cell) to cut
+  top-of-charge stress at ~1-2% capacity cost.
+- **Periodically (every ~2-4 weeks):** a full charge held at 56.8V so the
+  passive BMS gets sustained high-voltage time to balance cells --
+  something the current "hit 100% and cut immediately" behavior never
+  provides.
+
+### Blocker to resolve FIRST (Stage 0 — free, do before any code)
+
+On CAN-comms SPF systems it is genuinely unknown (firmware-dependent,
+conflicting forum reports) whether the inverter honors a changed charge
+voltage or the BMS overrides it. **Test empirically before building
+anything:** change "Charging constant voltage" 56.8 -> 55.2V via the
+Growatt web dashboard Setting panel (no code needed), then watch the
+gateway for 1-2 days. Does the pack now top out at 55.2V, or still reach
+56.8V?
+
+- If it takes effect -> the automation is worth building.
+- If the BMS overrides it -> the knob is disconnected; abandon the project
+  and leave the working BMS alone.
+
+Do this test with someone on-site.
+
+### Known limitations (accept before building)
+
+- **Can't balance "only when needed" — only on a schedule.** Per-cell
+  voltages (Modbus input regs 102-117) read zero on this firmware and
+  aren't in the cloud data either, so imbalance can't be detected
+  remotely. A fixed calendar schedule is the achievable design.
+- **Benefit is modest** relative to the pack's 6000+ cycle / 10-year
+  rating. Justified mainly because the infrastructure already exists and
+  the change is observable + reversible, not because it's urgent.
+- **Confirm battery temperature siting first** — thermal environment
+  dominates LiFePO4 aging more than any voltage tweak.
+
+### Build stages (only if Stage 0 passes)
+
+1. **Stage 1 — Modbus write path.** `scripts/growatt_configure.py` with
+   range clamps, read-back verification, and logging. Gate it behind the
+   gateway (stop gateway during a write, or add write to the gateway) so
+   the single-owner serial-port rule (see docs/GATEWAY.md) is respected.
+2. **Stage 2 — scheduler.** A small service/cron: hold 55.2V normally,
+   raise to 56.8V for one day every N weeks (balance window), return to
+   55.2V, logging every change. These are persistent inverter NVRAM
+   settings, so a scheduler failure is fail-safe (inverter keeps the last
+   value; no real-time control loop to go wrong).
+3. **Verification.** Watch one full balance window via the gateway;
+   confirm the pack reaches/leaves the intended voltages.
+
+---
+
 ## PRIORITY 1: RS485 Communication (UNRESOLVED)
 
 ### Current Status
