@@ -103,6 +103,15 @@ showing a plausible-looking lie. This is the actual fix for the original
 
 Quick liveness check -- doesn't require the caller to unpack `/latest`.
 
+### `GET /history?hours=24`
+
+```json
+{"readings": [{"timestamp": "2026-07-24T12:00:00+00:00", "bat_soc_pct": 96, "...": "..."}], "count": 288}
+```
+
+The local durable history (see "Local history buffer" below), oldest first.
+Only real, fresh readings ever land here -- never `test_data`.
+
 ## Configuration
 
 New `.env` variables (see `.env.example`):
@@ -113,6 +122,9 @@ New `.env` variables (see `.env.example`):
 | `GATEWAY_PORT` | `8090` | Local HTTP port. |
 | `GATEWAY_POLL_INTERVAL` | `15` | Seconds between Modbus polls. |
 | `GATEWAY_STALE_AFTER` | `90` | Seconds after which a cached reading is flagged `stale`. |
+| `GATEWAY_LOG_DB` | `data/solar_history.db` | Path to the local durable SQLite history (see below). |
+| `GATEWAY_LOG_INTERVAL` | `60` | Minimum seconds between local history writes. |
+| `GATEWAY_LOG_RETENTION_DAYS` | `180` | Rows older than this are pruned once a day. |
 
 `MODBUS_PORT` / `MODBUS_BAUDRATE` / `MODBUS_DEVICE_ID` now only matter to
 `growatt_gateway.py` -- `growatt_cloud.py` no longer reads them.
@@ -184,6 +196,47 @@ sudo cp growatt-watchdog.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now growatt-watchdog
 ```
+
+## Local history buffer
+
+Until 2026-07-24, the gateway only ever cached the single most recent
+reading in memory (`GatewayState`) -- restart the process and it's gone.
+The *only* local historical record of solar data was main-pi5's Prometheus,
+which scrapes this Pi's `node_exporter` textfile collector every 5 min over
+Tailscale. That's a real gap: Prometheus is pull-based, so a network blip
+between this Pi and main-pi5 during a scrape produces a **permanent** hole
+in its timeline -- there's no retry or backfill on that side, unlike
+`growatt_cloud.py`'s relay to `server.growatt.com` (that connection just
+keeps reconnecting and resumes live streaming) or `enviro-cam`'s sender on
+rancho-cam-pi (which queues locally and drains the backlog once the push
+to main-pi5 succeeds again).
+
+`growatt_storage.py` closes that gap with its own durable log, independent
+of anything downstream:
+
+- Every poll cycle that gets a real reading (`source == "modbus"`, never
+  `test_data` -- same discipline as `should_upload()`) is written to a local
+  SQLite file (`GATEWAY_LOG_DB`, default `data/solar_history.db`), throttled
+  to `GATEWAY_LOG_INTERVAL` (default 60s -- decoupled from the 15s poll
+  interval on purpose; logging every poll would be ~5700 SD-card writes/day
+  for no real benefit, and this fleet has SD-corruption history elsewhere).
+- Rows older than `GATEWAY_LOG_RETENTION_DAYS` (default 180) are pruned once
+  a day. At ~1,440 rows/day and ~150 bytes/row that's roughly 40 MB for the
+  full retention window -- trivial for the SD card.
+- `GET /history?hours=` exposes it, mirroring `monitor-cam-webapp`'s
+  `/api/sensors/history` shape (`{"readings": [...], "count": N}`), oldest
+  first, columns named to match `scale_reading()`'s keys 1:1 so a row can be
+  cross-referenced against a `homelab_solar_*` Prometheus sample directly.
+
+This does **not** attempt to backfill Prometheus itself after an outage --
+Prometheus's pull model makes that impractical without remote-write and an
+out-of-order ingestion window, neither of which this fleet runs, and it
+would be a disproportionate amount of machinery for a rare, short, and
+already-externally-backed-up gap (Growatt's own cloud still has it via
+`growatt_cloud.py`, separately). The point of this buffer is simpler: the
+reading itself is never actually lost, full stop, and is queryable locally
+the moment anyone needs it -- whether that's a manual recovery, a future
+local dashboard, or a one-off script.
 
 ## Diagnostics
 

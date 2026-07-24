@@ -4,6 +4,35 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-07-24
+
+### Added
+- `scripts/growatt_storage.py`: local durable SQLite history for the
+  gateway. Every real (`source == "modbus"`) reading is logged, throttled
+  to `GATEWAY_LOG_INTERVAL` (default 60s) and pruned past
+  `GATEWAY_LOG_RETENTION_DAYS` (default 180). Closes a real gap: main-pi5's
+  Prometheus was the *only* local historical record of solar data, and
+  being pull-based, a network blip during a scrape produced a permanent
+  hole in its timeline with no retry/backfill. This buffer means a reading
+  is never actually lost, independent of Prometheus, restarts, or anything
+  downstream.
+- `GET /history?hours=` on the gateway, exposing the new local history
+  (`{"readings": [...], "count": N}`, oldest first), mirroring
+  `monitor-cam-webapp`'s `/api/sensors/history` shape.
+- `.env.example`: `GATEWAY_LOG_DB`, `GATEWAY_LOG_INTERVAL`,
+  `GATEWAY_LOG_RETENTION_DAYS`.
+- Tests: `tests/test_growatt_storage.py` (log/retrieve/prune/upsert) plus
+  gateway-integration tests confirming `test_data` readings are never
+  persisted and the log-interval throttle is respected.
+
+### Why
+Prompted by a review of where each fleet service's data actually lives:
+climate (monitor-cam-webapp's SQLite) and internet speed (speed-test-logger's
+CSV) already have a durable local record independent of Prometheus; solar
+was the one place Prometheus's own scrape success was, silently, the only
+copy. This doesn't change growatt_cloud.py's upload behavior or the
+gateway's should_upload() semantics at all -- purely additive.
+
 ## [1.2.0] - 2026-07-18
 
 ### Added

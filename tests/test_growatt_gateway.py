@@ -148,6 +148,74 @@ def test_try_late_connect_leaves_inverter_none_on_failed_connect(monkeypatch):
     assert gw._inverter is None
 
 
+def test_maybe_log_reading_logs_real_readings(monkeypatch, tmp_path):
+    db_path = str(tmp_path / "solar.db")
+    monkeypatch.setattr(gw, 'LOG_DB_PATH', db_path)
+    monkeypatch.setattr(gw, 'LOG_INTERVAL', 0)
+    monkeypatch.setattr(gw, '_last_log_time', 0.0)
+    monkeypatch.setattr(gw, '_last_prune_time', float('inf'))  # skip prune this call
+    gw.storage.init_db(db_path)
+
+    fresh_state = gw.GatewayState()
+    fresh_state.update(_SAMPLE_RAW, source='modbus')
+    monkeypatch.setattr(gw, 'state', fresh_state)
+
+    gw._maybe_log_reading('modbus')
+
+    rows = gw.storage.get_history(db_path, hours=1)
+    assert len(rows) == 1
+    assert rows[0]['bat_soc_pct'] == 96
+
+
+def test_maybe_log_reading_skips_test_data(monkeypatch, tmp_path):
+    """Never persist a fabricated fallback reading as if it were real solar
+    history -- same discipline should_upload() applies to the cloud relay."""
+    db_path = str(tmp_path / "solar.db")
+    monkeypatch.setattr(gw, 'LOG_DB_PATH', db_path)
+    monkeypatch.setattr(gw, 'LOG_INTERVAL', 0)
+    monkeypatch.setattr(gw, '_last_log_time', 0.0)
+    monkeypatch.setattr(gw, '_last_prune_time', float('inf'))
+    gw.storage.init_db(db_path)
+
+    fresh_state = gw.GatewayState()
+    fresh_state.update(_SAMPLE_RAW, source='test_data')
+    monkeypatch.setattr(gw, 'state', fresh_state)
+
+    gw._maybe_log_reading('test_data')
+
+    assert gw.storage.get_history(db_path, hours=1) == []
+
+
+def test_maybe_log_reading_respects_throttle(monkeypatch, tmp_path):
+    db_path = str(tmp_path / "solar.db")
+    monkeypatch.setattr(gw, 'LOG_DB_PATH', db_path)
+    monkeypatch.setattr(gw, 'LOG_INTERVAL', 9999)
+    monkeypatch.setattr(gw, '_last_log_time', gw.time.monotonic())
+    monkeypatch.setattr(gw, '_last_prune_time', float('inf'))
+    gw.storage.init_db(db_path)
+
+    fresh_state = gw.GatewayState()
+    fresh_state.update(_SAMPLE_RAW, source='modbus')
+    monkeypatch.setattr(gw, 'state', fresh_state)
+
+    gw._maybe_log_reading('modbus')
+
+    assert gw.storage.get_history(db_path, hours=1) == []
+
+
+def test_history_endpoint_returns_local_readings(monkeypatch, tmp_path):
+    db_path = str(tmp_path / "solar.db")
+    monkeypatch.setattr(gw, 'LOG_DB_PATH', db_path)
+    gw.storage.init_db(db_path)
+    gw.storage.log_reading(db_path, gw.datetime.now(gw.timezone.utc).isoformat(),
+                            gw.scale_reading(_SAMPLE_RAW))
+
+    result = gw.history(hours=1)
+
+    assert result['count'] == 1
+    assert result['readings'][0]['bat_soc_pct'] == 96
+
+
 def test_health_endpoint_reports_reading_age(monkeypatch):
     fresh_state = gw.GatewayState()
     fresh_state.update(_SAMPLE_RAW, source='modbus')

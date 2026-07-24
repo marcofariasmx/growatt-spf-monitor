@@ -146,10 +146,12 @@ live in the ShinePhone app / server.growatt.com dashboard.
 Because the Modbus port only tolerates one exclusive owner,
 `growatt_gateway.py` is the single process that talks to the inverter; it
 polls on an interval and exposes the latest reading over a local-only HTTP
-API (`GET /latest`, `GET /health`, default `127.0.0.1:8090`).
+API (`GET /latest`, `GET /health`, `GET /history`, default `127.0.0.1:8090`).
 `growatt_cloud.py` (and any future local consumer -- a dashboard, a logger,
 Home Assistant) reads from that API instead of opening the serial port
-itself. Full rationale and the API response shape: **[docs/GATEWAY.md](docs/GATEWAY.md)**.
+itself. The gateway also keeps its own durable local history (SQLite,
+independent of Prometheus) so a network blip to main-pi5 never actually
+loses a reading. Full rationale and the API response shape: **[docs/GATEWAY.md](docs/GATEWAY.md)**.
 
 ```bash
 # Deploy as systemd services (gateway first)
