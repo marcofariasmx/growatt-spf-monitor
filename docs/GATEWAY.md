@@ -182,6 +182,24 @@ actually capable of fixing:
    rancho-main-pi (ping failures -> modem reboot) -- same shape of
    problem, same shape of fix.
 
+   **USB reset before the reboot (since 1.4.0).** At
+   `GATEWAY_WATCHDOG_USB_RESET_AFTER` (default 5) unhealthy checks -- once
+   per episode -- the watchdog de-authorizes and re-authorizes only the
+   adapter (`/sys/bus/usb/devices/<dev>/authorized` 0 -> 1, found by
+   `GATEWAY_WATCHDOG_USB_ID`, default `04e2:1410`) and restarts the
+   gateway. That is stronger than the July driver unbind/rebind: the
+   device is dropped and re-enumerated. On 2026-10-25 it brought back an
+   adapter wedged by a `udev` restart, with no reboot. If the gateway is
+   still unhealthy at `GATEWAY_WATCHDOG_FAILURE_LIMIT`, the reboot path
+   above runs as before.
+
+   **Root cause seen on 2026-10-25:** `vcgencmd get_throttled` = `0x50005`
+   and `Undervoltage detected!` in dmesg about every minute. A Pi 3B+
+   under-volted can't hold a USB adapter steady, which matches the ~2
+   reboots/day this watchdog had been doing (39 in 3 weeks). The real fix
+   is power: a 5.1 V / 2.5 A supply with a short thick cable, or a
+   powered USB hub for the adapter.
+
 "Healthy" is intentionally strict and matches `should_upload()`'s
 definition in `growatt_cloud.py`: `modbus_connected` true, `source ==
 "modbus"`, and `age_seconds` under `GATEWAY_WATCHDOG_UNHEALTHY_AGE`

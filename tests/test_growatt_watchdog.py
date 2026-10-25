@@ -40,3 +40,39 @@ def test_seconds_since_last_reboot_measures_elapsed_time():
     ten_minutes_ago = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
     elapsed = wd.seconds_since_last_reboot({'last_reboot': ten_minutes_ago})
     assert 595 < elapsed < 605
+
+
+def test_should_reset_usb_only_at_the_configured_check():
+    assert wd.should_reset_usb(wd.USB_RESET_AFTER - 1, False) is False
+    assert wd.should_reset_usb(wd.USB_RESET_AFTER, False) is True
+    assert wd.should_reset_usb(wd.USB_RESET_AFTER + 1, False) is False
+
+
+def test_should_reset_usb_once_per_episode():
+    assert wd.should_reset_usb(wd.USB_RESET_AFTER, True) is False
+
+
+def test_should_reset_usb_disabled_when_zero(monkeypatch):
+    monkeypatch.setattr(wd, 'USB_RESET_AFTER', 0)
+    assert wd.should_reset_usb(0, False) is False
+
+
+def _fake_usb(root, name, vendor, product):
+    d = root / name
+    d.mkdir()
+    (d / 'idVendor').write_text(vendor + '\n')
+    (d / 'idProduct').write_text(product + '\n')
+
+
+def test_find_usb_device_matches_by_id_not_position(tmp_path):
+    """The LAN chip sits next to the adapter on a Pi 3B+ -- matching by
+    vendor:product must never pick it."""
+    _fake_usb(tmp_path, '1-1.1.1', '0424', '7800')
+    _fake_usb(tmp_path, '1-1.1.3', '04e2', '1410')
+    (tmp_path / 'usb1').mkdir()  # a hub-like entry without id files
+    assert wd.find_usb_device('04e2:1410', str(tmp_path)) == str(tmp_path / '1-1.1.3')
+
+
+def test_find_usb_device_none_when_absent(tmp_path):
+    _fake_usb(tmp_path, '1-1.1.1', '0424', '7800')
+    assert wd.find_usb_device('04e2:1410', str(tmp_path)) is None

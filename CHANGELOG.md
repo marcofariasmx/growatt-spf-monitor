@@ -4,6 +4,23 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-10-25
+
+### Added
+- Watchdog USB reset: before resorting to a reboot, `growatt_watchdog.py`
+  resets only the USB-RS485 adapter (sysfs `authorized` 0 -> 1, matched by
+  vendor:product, never by bus position) and restarts the gateway, once
+  per unhealthy episode (`GATEWAY_WATCHDOG_USB_RESET_AFTER`, default 5;
+  `GATEWAY_WATCHDOG_USB_ID`, default `04e2:1410`). Reboot stays as the
+  fallback.
+- Tests for the reset decision and the sysfs lookup.
+
+### Why
+rancho-inverter-pi rebooted itself 39 times in 3 weeks. A manual
+`authorized` toggle recovered the wedged adapter on 2026-10-25 without a
+reboot. The underlying cause is undervoltage (`get_throttled` = 0x50005);
+see docs/GATEWAY.md.
+
 ## [1.3.0] - 2026-07-24
 
 ### Added
